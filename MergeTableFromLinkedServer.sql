@@ -1,26 +1,25 @@
 /*
-TH 20131119
-Procédure utilisée pour mettre à jour le réferentiel de développement depuis la recette.
-Ajouter le serveur source dont les données sont à importer en serveur lié puis faire appel à cette procédure pour alimenter une table
-On peux utiliser un serveur lié local 'self' lorsque les BDD sont sur le même serveur
+Stored procedure that automatically merge a table from another table. The two tables structures needs to be identical.
+It is useful to update referentials through different environements (i.e. from production to developement).
 
-Exemple :
-exec Staging.MergeTableFromLinkedServer 'self' , 'MyBdd' , 'dbo' , 'Referentiel'
+Usage:
+	- Add source server as a linked server (if the DB are on the same server, use a local loopback)
+	- exec Staging.MergeTableFromLinkedServer 'self' , 'MyBdd' , 'dbo' , 'MyReferential'
+
 */
-
 CREATE PROCEDURE Staging.MergeTableFromLinkedServer
-(	    @SourceLinkedServer NVARCHAR(255), --Serveur lié source
-		@SourceDatabaseName NVARCHAR(255), -- BDD du serveur lié a utiliser
-		@SchemaName NVARCHAR(255), --Schéma de la table source & cible
-		@TableName NVARCHAR(255), -- Nom de la table source & cible
-		/* facultatifs */
-		@MergeKey NVARCHAR(MAX) = '', --Clé de mise à jour. PK par défaut, sinon mettre : source.colonne1 = target.colonne1 and ...
-		@Filter NVARCHAR(MAX) = '' -- Filtre à utiliser pour la mise à jour, exemple : WHERE isDeleted = 0
+(	    @SourceLinkedServer NVARCHAR(255), -- source linked server
+		@SourceDatabaseName NVARCHAR(255), -- source database on the linked server
+		@SchemaName NVARCHAR(255), -- schema name (both source & target)
+		@TableName NVARCHAR(255), -- table name (both source & target)
+		/* optional */
+		@MergeKey NVARCHAR(MAX) = '', -- Update key (default is the primary key of the table). Otherwise, use  : source.c1 = target.c1 and ...
+		@Filter NVARCHAR(MAX) = '' -- example : WHERE isDeleted = 0
 )
 AS
 BEGIN
 	BEGIN TRY
-		--squelette du Merge
+		--Merge skeleton
 		DECLARE @sqlMerge NVARCHAR(MAX) =
 		'MERGE $(SchemaName).$(TableName) AS target
 			USING (
@@ -43,7 +42,7 @@ BEGIN
 					$(InsertColumnList)
 					); ';
 
-		--si il y a un identity dans la table, on spécifie identity insert à ON
+		--if the table contains and identity column, specify identity insert ON
 		IF EXISTS (
 			select 1 from sys.objects o 
 			inner join sys.columns c on o.object_id = c.object_id
@@ -57,7 +56,7 @@ BEGIN
 				@UpdateColumnList NVARCHAR(MAX) = '',
 				@InsertColumnList NVARCHAR(MAX) = ''
 
-		-- construction des listes de colonnes
+		-- build column list
 		select	@ColumnList = @ColumnList  + '[' + column_name + '], '
 				,@UpdateColumnList = @UpdateColumnList + CASE WHEN COLUMNPROPERTY(object_id(TABLE_SCHEMA + '.' + TABLE_NAME), COLUMN_NAME, 'IsIdentity') = 0 THEN '[' + column_name + '] = source.[' + column_name + '], ' ELSE '' END
 				,@InsertColumnList = @InsertColumnList + 'source.[' + column_name + '], '
@@ -68,7 +67,7 @@ BEGIN
 
 		select @ColumnList = SUBSTRING(@ColumnList,0,LEN(@ColumnList)) ,  @UpdateColumnList = SUBSTRING(@UpdateColumnList,0,LEN(@UpdateColumnList)) ,  @InsertColumnList = SUBSTRING(@InsertColumnList,0,LEN(@InsertColumnList)) 
 
-		--Si la clé de mise à jour n'est pas spécifiée, on utilise la PK de la table
+		--If the update key isn't specified, use the PK
 		IF @MergeKey = ''
 		BEGIN
 			select @MergeKey = @MergeKey  + 'source.[' + kcu.COLUMN_NAME + '] = target.[' + kcu.COLUMN_NAME  + '] AND '
@@ -85,7 +84,7 @@ BEGIN
 		END
 
 		
-		--on insère dans la requête finale les paramétres fournis à la procédure
+		--replace the parameters into the final request
 		SET @sqlMerge = REPLACE(@sqlMerge,'$(ColumnList)',@ColumnList)
 		SET @sqlMerge = REPLACE(@sqlMerge,'$(UpdateColumnList)',@UpdateColumnList)
 		SET @sqlMerge = REPLACE(@sqlMerge,'$(InsertColumnList)',@InsertColumnList)

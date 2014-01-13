@@ -1,4 +1,12 @@
-/* Exemple : exec Staging.MergeTableFromLinkedServer 'self' , 'MyBdd' , 'dbo' , 'Purchase' */
+/*
+TH 20131119
+Procédure utilisée pour mettre à jour le réferentiel de développement depuis la recette.
+Ajouter le serveur source dont les données sont à importer en serveur lié puis faire appel à cette procédure pour alimenter une table
+On peux utiliser un serveur lié local 'self' lorsque les BDD sont sur le même serveur
+
+Exemple :
+exec Staging.MergeTableFromLinkedServer 'self' , 'MyBdd' , 'dbo' , 'Referentiel'
+*/
 
 CREATE PROCEDURE Staging.MergeTableFromLinkedServer
 (	    @SourceLinkedServer NVARCHAR(255), --Serveur lié source
